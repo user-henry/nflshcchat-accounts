@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 · NFLSHC 账号授权中心</title>
+    <meta name="theme-color" content="#ffd700">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/app.css">
+    <script src="js/theme.js?v=1"></script>
+</head>
+<body>
+
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">✨</div>
+        <h1 class="auth-title">注册 NFLSHC 账号</h1>
+        <p class="auth-sub">一个账号即可登录 nflshcchat 全站与所有接入的第三方应用</p>
+
+        <div class="alert alert-error" id="msgBox" style="display:none;"></div>
+
+        <div class="field">
+            <label for="username">用户名 <span class="hint" style="display:inline;">（3-20 位）</span></label>
+            <input class="input" id="username" autocomplete="username" placeholder="设置你的用户名">
+        </div>
+        <div class="field">
+            <label for="email">邮箱 <span class="hint" style="display:inline;">（用于找回密码）</span></label>
+            <input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com">
+        </div>
+        <div class="field">
+            <label for="password">密码</label>
+            <div class="pw-wrap">
+                <input class="input" id="password" type="password" autocomplete="new-password" placeholder="至少 6 位">
+                <button class="pw-toggle" type="button" onclick="togglePw('password', this)">👁️</button>
+            </div>
+        </div>
+        <div class="field">
+            <label for="password2">确认密码</label>
+            <input class="input" id="password2" type="password" autocomplete="new-password" placeholder="再次输入密码">
+        </div>
+
+        <button class="btn btn-primary btn-block" id="registerBtn">注册</button>
+
+        <div class="auth-foot">
+            已有账号？<a href="index.html" id="loginLink">返回登录</a>
+        </div>
+        <div class="auth-foot" style="margin-top:8px;">
+            <select id="themeSelect" class="input" style="width:auto;padding:6px 10px;font-size:12.5px;"></select>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js?v=1"></script>
+<script>
+(function () {
+    'use strict';
+    var U = window.NFLSHC.util;
+    var A = window.NFLSHC.Account;
+    var params = new URLSearchParams(location.search);
+    var next = params.get('next') || '';
+
+    (function () {
+        var sel = document.getElementById('themeSelect');
+        var themes = ThemeManager.getThemes();
+        Object.keys(themes).forEach(function (k) {
+            var o = document.createElement('option');
+            o.value = k; o.textContent = themes[k].icon + ' ' + themes[k].name;
+            sel.appendChild(o);
+        });
+        sel.value = ThemeManager.getTheme();
+        sel.addEventListener('change', function () { ThemeManager.setTheme(sel.value); });
+    })();
+
+    if (next) {
+        document.getElementById('loginLink').href = 'index.html?next=' + encodeURIComponent(next);
+    }
+
+    function msg(text, type) {
+        var box = document.getElementById('msgBox');
+        box.className = 'alert alert-' + (type || 'error');
+        box.innerHTML = text;
+        box.style.display = 'block';
+    }
+
+    document.getElementById('registerBtn').addEventListener('click', async function () {
+        var username = document.getElementById('username').value.trim();
+        var email = document.getElementById('email').value.trim();
+        var pw = document.getElementById('password').value;
+        var pw2 = document.getElementById('password2').value;
+        var btn = this;
+        document.getElementById('msgBox').style.display = 'none';
+
+        if (username.length < 3 || username.length > 20) { msg('用户名长度需为 3-20 个字符'); return; }
+        if (!/^[A-Za-z0-9_\u4e00-\u9fa5-]+$/.test(username)) { msg('用户名只能包含中文、字母、数字、下划线和短横线'); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg('请输入有效的邮箱地址'); return; }
+        if (pw.length < 6) { msg('密码至少 6 位'); return; }
+        if (pw !== pw2) { msg('两次输入的密码不一致'); return; }
+
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            var hash = await U.hashPassword(pw);
+            await A.register(username, hash, email);
+            msg('注册成功！正在前往登录…', 'success');
+            setTimeout(function () {
+                location.href = 'index.html' + (next ? ('?next=' + encodeURIComponent(next)) : '');
+            }, 1100);
+        } catch (e) {
+            var text = e.message || '注册失败';
+            if (e.status === 409 || /已存在/.test(text)) text = '该用户名已被注册，请换一个';
+            if (e.status === 403 || /封禁/.test(text)) text = '当前网络环境已被限制注册，请联系管理员';
+            msg(U.escapeHtml(text));
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    });
+
+    document.getElementById('password2').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') document.getElementById('registerBtn').click();
+    });
+
+    window.togglePw = function (inputId, btn) {
+        var input = document.getElementById(inputId);
+        var isPw = input.type === 'password';
+        input.type = isPw ? 'text' : 'password';
+        btn.textContent = isPw ? '🙈' : '👁️';
+    };
+})();
+</script>
+</body>
+</html>
