@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的授权 · NFLSHC 账号授权中心</title>
+    <meta name="theme-color" content="#ffd700">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/app.css">
+    <script src="js/theme.js?v=1"></script>
+</head>
+<body>
+
+<nav class="nav">
+    <div class="nav-brand">
+        <span class="dot"></span>
+        <span>NFLSHC 账号授权中心</span>
+    </div>
+    <div class="nav-links">
+        <a href="apps.html">我的授权</a>
+        <a href="https://platform.nflshcchat.cc.cd" target="_blank" rel="noopener">开发者平台</a>
+        <a href="https://nflshcchat.cc.cd" target="_blank" rel="noopener">返回主站</a>
+        <select id="themeSelect" class="input" style="width:auto;padding:7px 10px;font-size:13px;"></select>
+        <span class="nav-user" id="navUser"></span>
+        <button id="logoutBtn">退出登录</button>
+    </div>
+</nav>
+
+<div class="wrap">
+    <h1 class="page-title">我的授权</h1>
+    <p class="page-sub">这些第三方应用已获得你账号的部分信息访问权限，你可以随时撤销。</p>
+
+    <div class="card">
+        <div id="listArea">
+            <div class="skeleton" style="width:55%;height:18px;margin-bottom:16px;"></div>
+            <div class="skeleton" style="width:85%;margin-bottom:10px;"></div>
+            <div class="skeleton" style="width:70%;"></div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+        <h3 style="font-size:16px;margin-bottom:8px;">🔒 安全提示</h3>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.8;">
+            · 应用只能读取你授权范围内的信息，<strong>永远无法获取你的密码</strong>。<br>
+            · 撤销授权后，该应用手中的访问令牌会立即失效。<br>
+            · 如果发现某个应用存在异常行为，可在 <a href="https://nflshcchat.cc.cd" target="_blank" rel="noopener">主站</a> 向管理员反馈。
+        </p>
+    </div>
+</div>
+
+<!-- 撤销确认 -->
+<div class="modal-mask" id="revokeModal">
+    <div class="modal">
+        <h3>撤销授权</h3>
+        <p class="modal-sub" id="revokeSub"></p>
+        <p style="font-size:13.5px;color:var(--text-secondary);">
+            撤销后该应用将无法继续读取你的信息，如需再次使用需重新授权。
+        </p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeRevoke()">取消</button>
+            <button class="btn btn-danger" id="revokeConfirm">确认撤销</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js?v=1"></script>
+<script>
+(function () {
+    'use strict';
+    var U = window.NFLSHC.util;
+    var OAuth = window.NFLSHC.OAuth;
+    var pendingRevoke = null;
+
+    (function () {
+        var sel = document.getElementById('themeSelect');
+        var themes = ThemeManager.getThemes();
+        Object.keys(themes).forEach(function (k) {
+            var o = document.createElement('option');
+            o.value = k; o.textContent = themes[k].icon + ' ' + themes[k].name;
+            sel.appendChild(o);
+        });
+        sel.value = ThemeManager.getTheme();
+        sel.addEventListener('change', function () { ThemeManager.setTheme(sel.value); });
+    })();
+
+    function renderNav(user) {
+        document.getElementById('navUser').textContent = user ? ('👤 ' + user.username) : '';
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', async function () {
+        try { await window.NFLSHC.request('/api/auth/logout', { method: 'POST' }); } catch (e) { /* 忽略 */ }
+        U.clearUser();
+        location.href = 'index.html';
+    });
+
+    function fmtTime(iso) {
+        if (!iso) return '—';
+        try { return new Date(iso).toLocaleString('zh-CN'); } catch (e) { return iso; }
+    }
+
+    async function load() {
+        var area = document.getElementById('listArea');
+        try {
+            var data = await OAuth.grants();
+            var list = (data.grants || []).filter(function (g) { return !g.revoked; });
+            var revokedList = (data.grants || []).filter(function (g) { return g.revoked; });
+
+            if (list.length === 0) {
+                area.innerHTML = '<div class="empty"><span class="icon">🔗</span>' +
+                    '你还没有授权任何第三方应用<br>' +
+                    '<span class="hint">当你在应用中选择「使用 NFLSHC 账号登录」并同意授权后，这里会显示该应用。</span></div>';
+            } else {
+                area.innerHTML = list.map(function (g) {
+                    var scopes = (g.scopes || []).map(function (s) {
+                        return '<span class="chip">' + U.escapeHtml(s.name || s.key) + '</span>';
+                    }).join('');
+                    var statusChip = g.status === 'active'
+                        ? '<span class="chip">正常</span>'
+                        : '<span class="chip danger">已停用</span>';
+                    return '<div class="grant-row">' +
+                        '<div class="app-logo" style="width:48px;height:48px;font-size:20px;' +
+                        (g.logo ? ('background-image:url("' + String(g.logo).replace(/["\\]/g, '') + '");') : '') + '">' +
+                        (g.logo ? '' : '🔗') + '</div>' +
+                        '<div class="grant-main">' +
+                        '<div class="grant-name">' + U.escapeHtml(g.name) + '</div>' +
+                        (g.description ? '<div class="hint" style="margin-top:2px;">' + U.escapeHtml(g.description) + '</div>' : '') +
+                        '<div class="grant-scopes">' + scopes + statusChip + '</div>' +
+                        '<div class="hint" style="margin-top:8px;">开发者：' + U.escapeHtml(g.owner || '未知') +
+                        ' · 授权时间：' + fmtTime(g.grantedAt) + '</div>' +
+                        '</div>' +
+                        '<div style="display:flex;flex-direction:column;gap:8px;">' +
+                        (g.homepage ? '<a class="btn btn-ghost btn-sm" href="' + U.escapeHtml(g.homepage) + '" target="_blank" rel="noopener">访问应用</a>' : '') +
+                        '<button class="btn btn-danger btn-sm" data-revoke="' + U.escapeHtml(g.clientId) + '" data-name="' + U.escapeHtml(g.name) + '">撤销授权</button>' +
+                        '</div></div>';
+                }).join('');
+
+                if (revokedList.length > 0) {
+                    area.innerHTML += '<div class="hint" style="margin-top:18px;">已撤销 ' + revokedList.length + ' 个应用的授权记录。</div>';
+                }
+            }
+
+            Array.prototype.forEach.call(document.querySelectorAll('[data-revoke]'), function (btn) {
+                btn.addEventListener('click', function () {
+                    pendingRevoke = { id: btn.getAttribute('data-revoke'), name: btn.getAttribute('data-name') };
+                    document.getElementById('revokeSub').innerHTML = '确定要撤销对 <strong>' + U.escapeHtml(pendingRevoke.name) + '</strong> 的授权吗？';
+                    document.getElementById('revokeModal').classList.add('show');
+                });
+            });
+        } catch (e) {
+            area.innerHTML = '<div class="alert alert-error">加载失败：' + U.escapeHtml(e.message || '未知错误') + '</div>';
+        }
+    }
+
+    window.closeRevoke = function () {
+        document.getElementById('revokeModal').classList.remove('show');
+        pendingRevoke = null;
+    };
+
+    document.getElementById('revokeConfirm').addEventListener('click', async function () {
+        if (!pendingRevoke) return;
+        var btn = this;
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            await OAuth.revoke(pendingRevoke.id);
+            U.toast('已撤销授权', 'success');
+            closeRevoke();
+            await load();
+        } catch (e) {
+            U.toast(e.message || '撤销失败', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    });
+
+    (async function boot() {
+        var user = await U.validateSession();
+        if (!user) { location.href = 'index.html?next=' + encodeURIComponent('apps.html'); return; }
+        renderNav(user);
+        await load();
+    })();
+})();
+</script>
+</body>
+</html>
