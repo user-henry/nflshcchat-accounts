@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 · NFLSHC 账号授权中心</title>
+    <meta name="theme-color" content="#ffd700">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/app.css">
+    <script src="js/theme.js?v=1"></script>
+</head>
+<body>
+
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">🔐</div>
+        <h1 class="auth-title">NFLSHC 账号</h1>
+        <p class="auth-sub">登录后即可授权第三方应用访问你的账号</p>
+
+        <div class="alert alert-error" id="msgBox" style="display:none;"></div>
+        <div class="alert alert-info" id="nextBox" style="display:none;"></div>
+
+        <div class="field">
+            <label for="username">用户名</label>
+            <input class="input" id="username" autocomplete="username" placeholder="请输入 NFLSHC 用户名">
+        </div>
+        <div class="field">
+            <label for="password">密码</label>
+            <div class="pw-wrap">
+                <input class="input" id="password" type="password" autocomplete="current-password" placeholder="请输入密码">
+                <button class="pw-toggle" type="button" onclick="togglePw('password', this)">👁️</button>
+            </div>
+        </div>
+
+        <button class="btn btn-primary btn-block" id="loginBtn">登录</button>
+
+        <div class="auth-links" style="margin-top:14px;">
+            <a href="register.html" id="registerLink">注册新账号</a>
+            <a href="javascript:void(0)" onclick="showForgot()">忘记密码？</a>
+        </div>
+
+        <div class="auth-foot">
+            <a href="javascript:void(0)" onclick="showAppeal()">账号被冻结或封禁？前往申诉</a>
+        </div>
+        <div class="auth-foot" style="margin-top:10px;">
+            <select id="themeSelect" class="input" style="width:auto;padding:6px 10px;font-size:12.5px;"></select>
+        </div>
+    </div>
+</div>
+
+<!-- 忘记密码 -->
+<div class="modal-mask" id="forgotModal">
+    <div class="modal">
+        <h3>重置密码</h3>
+        <p class="modal-sub">验证码将发送到你的注册邮箱（5 分钟内有效）</p>
+        <div class="alert alert-error" id="forgotMsg" style="display:none;"></div>
+        <div class="field">
+            <label for="fpUsername">用户名</label>
+            <input class="input" id="fpUsername" placeholder="你的用户名">
+        </div>
+        <div class="field">
+            <label for="fpEmail">注册邮箱</label>
+            <input class="input" id="fpEmail" type="email" placeholder="注册时填写的邮箱">
+        </div>
+        <button class="btn btn-ghost btn-block" id="sendCodeBtn">获取验证码</button>
+        <div id="fpStep2" style="display:none;">
+            <div class="field" style="margin-top:16px;">
+                <label for="fpCode">邮箱验证码</label>
+                <input class="input" id="fpCode" placeholder="6 位验证码" maxlength="6">
+            </div>
+            <div class="field">
+                <label for="fpNewPw">新密码</label>
+                <input class="input" id="fpNewPw" type="password" placeholder="至少 6 位">
+            </div>
+            <div class="field">
+                <label for="fpNewPw2">确认新密码</label>
+                <input class="input" id="fpNewPw2" type="password" placeholder="再次输入新密码">
+            </div>
+            <button class="btn btn-primary btn-block" id="resetBtn">重置密码</button>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal('forgotModal')">关闭</button>
+        </div>
+    </div>
+</div>
+
+<!-- 申诉 -->
+<div class="modal-mask" id="appealModal">
+    <div class="modal">
+        <h3>账号申诉</h3>
+        <p class="modal-sub">如果你的账号被冻结或封禁，可在此向管理员说明情况</p>
+        <div class="alert alert-error" id="appealMsg" style="display:none;"></div>
+        <div class="field">
+            <label for="apUsername">用户名</label>
+            <input class="input" id="apUsername" placeholder="被冻结/封禁的用户名">
+        </div>
+        <div class="field">
+            <label for="apReason">申诉说明</label>
+            <textarea class="input" id="apReason" placeholder="请说明情况（500 字以内）" maxlength="500"></textarea>
+        </div>
+        <button class="btn btn-primary btn-block" id="appealBtn">提交申诉</button>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal('appealModal')">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js?v=1"></script>
+<script>
+(function () {
+    'use strict';
+    var U = window.NFLSHC.util;
+    var A = window.NFLSHC.Account;
+    var params = new URLSearchParams(location.search);
+    var next = params.get('next') || '';
+
+    // 主题选择
+    (function () {
+        var sel = document.getElementById('themeSelect');
+        var themes = ThemeManager.getThemes();
+        Object.keys(themes).forEach(function (k) {
+            var o = document.createElement('option');
+            o.value = k; o.textContent = themes[k].icon + ' ' + themes[k].name;
+            sel.appendChild(o);
+        });
+        sel.value = ThemeManager.getTheme();
+        sel.addEventListener('change', function () { ThemeManager.setTheme(sel.value); });
+    })();
+
+    if (next) {
+        document.getElementById('registerLink').href = 'register.html?next=' + encodeURIComponent(next);
+        var nb = document.getElementById('nextBox');
+        nb.style.display = 'block';
+        nb.textContent = '登录成功后将自动返回授权页面。';
+    }
+
+    function msg(text, type) {
+        var box = document.getElementById('msgBox');
+        box.className = 'alert alert-' + (type || 'error');
+        box.innerHTML = text;
+        box.style.display = 'block';
+    }
+
+    function goAfterLogin() {
+        location.href = next || 'apps.html';
+    }
+
+    // ============ 登录 ============
+    async function login() {
+        var username = document.getElementById('username').value.trim();
+        var password = document.getElementById('password').value;
+        var btn = document.getElementById('loginBtn');
+        if (!username || !password) { msg('请填写用户名和密码'); return; }
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            var hash = await U.hashPassword(password);
+            var data = await A.login(username, hash);
+            if (!data.token) throw new Error(data.error || '登录失败');
+            window.AuthToken.set(data.token);
+            U.saveUser({ username: data.username || username, isAdmin: !!data.isAdmin });
+            msg('登录成功，正在跳转…', 'success');
+            setTimeout(goAfterLogin, 500);
+        } catch (e) {
+            var extra = '';
+            if (/冻结|封禁|banned|frozen/i.test(e.message || '')) {
+                extra = ' <a href="javascript:void(0)" onclick="showAppeal()">点击申诉</a>';
+            }
+            msg(U.escapeHtml(e.message || '登录失败') + extra);
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', login);
+    document.getElementById('password').addEventListener('keypress', function (e) { if (e.key === 'Enter') login(); });
+
+    // ============ 忘记密码 ============
+    var codeSent = false;
+    window.showForgot = function () {
+        document.getElementById('forgotModal').classList.add('show');
+        document.getElementById('fpUsername').value = document.getElementById('username').value.trim();
+    };
+    window.closeModal = function (id) { document.getElementById(id).classList.remove('show'); };
+
+    function fmsg(text, type) {
+        var box = document.getElementById('forgotMsg');
+        box.className = 'alert alert-' + (type || 'error');
+        box.textContent = text;
+        box.style.display = 'block';
+    }
+
+    document.getElementById('sendCodeBtn').addEventListener('click', async function () {
+        var username = document.getElementById('fpUsername').value.trim();
+        var email = document.getElementById('fpEmail').value.trim();
+        var btn = this;
+        if (!username || !email) { fmsg('请填写用户名和注册邮箱'); return; }
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            var res = await A.forgot(username, email);
+            codeSent = true;
+            document.getElementById('fpStep2').style.display = 'block';
+            fmsg(res.message || '验证码已发送，请查收邮箱', 'success');
+            var left = 60;
+            btn.textContent = left + 's 后可重发';
+            var t = setInterval(function () {
+                left--;
+                if (left <= 0) { clearInterval(t); btn.disabled = false; btn.textContent = '重新获取验证码'; }
+                else btn.textContent = left + 's 后可重发';
+            }, 1000);
+        } catch (e) {
+            fmsg(e.message || '发送失败');
+        } finally {
+            btn.classList.remove('is-loading');
+            if (!codeSent) btn.disabled = false;
+        }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', async function () {
+        var username = document.getElementById('fpUsername').value.trim();
+        var code = document.getElementById('fpCode').value.trim();
+        var pw = document.getElementById('fpNewPw').value;
+        var pw2 = document.getElementById('fpNewPw2').value;
+        var btn = this;
+        if (!code || !pw) { fmsg('请填写验证码和新密码'); return; }
+        if (pw.length < 6) { fmsg('新密码至少 6 位'); return; }
+        if (pw !== pw2) { fmsg('两次输入的密码不一致'); return; }
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            var v = await A.verifyReset(username, code);
+            if (!v.token) throw new Error(v.error || '验证码错误或已过期');
+            var hash = await U.hashPassword(pw);
+            await window.NFLSHC.request('/api/legacy/issues/' + encodeURIComponent(username) + '?labels=user', {
+                method: 'PATCH',
+                headers: { 'Authorization': 'Bearer ' + v.token },
+                body: JSON.stringify({
+                    body: '用户信息\n```json\n' + JSON.stringify({ username: username, password: hash, passwordHashed: true }, null, 2) + '\n```'
+                })
+            });
+            fmsg('密码重置成功，请使用新密码登录', 'success');
+            setTimeout(function () {
+                closeModal('forgotModal');
+                document.getElementById('password').value = '';
+                document.getElementById('password').focus();
+            }, 1200);
+        } catch (e) {
+            fmsg(e.message || '重置失败');
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    });
+
+    // ============ 申诉 ============
+    window.showAppeal = function () {
+        document.getElementById('appealModal').classList.add('show');
+        var u = document.getElementById('apUsername');
+        if (!u.value) u.value = document.getElementById('username').value.trim() || params.get('username') || '';
+    };
+
+    document.getElementById('appealBtn').addEventListener('click', async function () {
+        var username = document.getElementById('apUsername').value.trim();
+        var reason = document.getElementById('apReason').value.trim();
+        var box = document.getElementById('appealMsg');
+        var btn = this;
+        if (!username || !reason) {
+            box.className = 'alert alert-error'; box.textContent = '请填写用户名和申诉说明'; box.style.display = 'block';
+            return;
+        }
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            var res = await A.appeal(username, reason);
+            box.className = 'alert alert-success';
+            box.textContent = res.message || '申诉已提交，管理员会尽快处理';
+            box.style.display = 'block';
+        } catch (e) {
+            box.className = 'alert alert-error';
+            box.textContent = e.message || '提交失败';
+            box.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    });
+
+    window.togglePw = function (inputId, btn) {
+        var input = document.getElementById(inputId);
+        var isPw = input.type === 'password';
+        input.type = isPw ? 'text' : 'password';
+        btn.textContent = isPw ? '🙈' : '👁️';
+    };
+
+    // ============ 已登录则直接跳转 ============
+    (async function () {
+        if (params.get('appeal')) { window.showAppeal(); }
+        var user = await U.validateSession();
+        if (user) {
+            msg('检测到已登录（' + U.escapeHtml(user.username) + '），正在跳转…', 'success');
+            setTimeout(goAfterLogin, 600);
+        }
+    })();
+})();
+</script>
+</body>
+</html>
