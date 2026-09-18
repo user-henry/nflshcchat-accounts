@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>授权确认 · NFLSHC 账号授权中心</title>
+    <meta name="theme-color" content="#ffd700">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/app.css">
+    <script src="js/theme.js?v=1"></script>
+</head>
+<body>
+
+<nav class="nav">
+    <div class="nav-brand">
+        <span class="dot"></span>
+        <span>NFLSHC 账号授权中心</span>
+    </div>
+    <div class="nav-links">
+        <a href="apps.html">我的授权</a>
+        <select id="themeSelect" class="input" style="width:auto;padding:7px 10px;font-size:13px;"></select>
+        <span class="nav-user" id="navUser"></span>
+        <button id="logoutBtn" style="display:none;">退出登录</button>
+    </div>
+</nav>
+
+<div class="wrap wrap-narrow">
+
+    <div class="steps" id="steps">
+        <div class="step active" id="stepLogin"><span class="step-num">1</span> 登录账号</div>
+        <div class="step-line"></div>
+        <div class="step" id="stepAuth"><span class="step-num">2</span> 确认授权</div>
+    </div>
+
+    <!-- 加载中 -->
+    <div class="card" id="loadingCard">
+        <div class="skeleton" style="width:60%;height:20px;margin-bottom:14px;"></div>
+        <div class="skeleton" style="width:90%;margin-bottom:10px;"></div>
+        <div class="skeleton" style="width:75%;"></div>
+        <p class="hint" style="margin-top:18px;">正在读取授权请求…</p>
+    </div>
+
+    <!-- 错误 -->
+    <div class="card" id="errorCard" style="display:none;">
+        <div class="empty">
+            <span class="icon">⚠️</span>
+            <div id="errorText" style="font-size:15px;color:var(--text-primary);"></div>
+            <p class="hint" style="margin-top:12px;">如果是开发者配置有误，请联系该应用的开发者；如有疑问可到 <a href="https://nflshcchat.cc.cd" target="_blank" rel="noopener">nflshcchat 主站</a> 反馈。</p>
+        </div>
+    </div>
+
+    <!-- 登录 -->
+    <div class="card" id="loginCard" style="display:none;">
+        <h2 class="page-title" style="font-size:20px;">请先登录</h2>
+        <p class="page-sub">授权前需要确认你的 nflshcchat 账号身份</p>
+        <div class="alert alert-error" id="loginError" style="display:none;"></div>
+        <div class="field">
+            <label for="username">用户名</label>
+            <input class="input" id="username" autocomplete="username" placeholder="请输入用户名">
+        </div>
+        <div class="field">
+            <label for="password">密码</label>
+            <div class="pw-wrap">
+                <input class="input" id="password" type="password" autocomplete="current-password" placeholder="请输入密码">
+                <button class="pw-toggle" type="button" onclick="togglePw('password', this)">👁️</button>
+            </div>
+        </div>
+        <button class="btn btn-primary btn-block" id="loginBtn">登录并继续</button>
+        <div class="auth-links" style="margin-top:14px;">
+            <a href="register.html" id="registerLink">没有账号？立即注册</a>
+            <a href="index.html" id="forgotLink">忘记密码？</a>
+        </div>
+    </div>
+
+    <!-- 授权确认 -->
+    <div class="card" id="consentCard" style="display:none;">
+        <div class="app-head">
+            <div class="app-logo" id="appLogo">🔗</div>
+            <div style="min-width:0;">
+                <div class="app-name" id="appName">应用</div>
+                <div class="app-desc" id="appDesc"></div>
+                <div class="app-meta" id="appMeta"></div>
+            </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:18px;">
+            该应用请求访问以下信息。你可以取消勾选不想授权的内容，仅授权部分权限也能继续。
+        </div>
+
+        <ul class="scope-list" id="scopeList"></ul>
+
+        <div id="alreadyGranted" class="alert alert-warning" style="display:none;margin-top:16px;"></div>
+
+        <div class="modal-actions" style="margin-top:24px;">
+            <button class="btn btn-ghost" id="denyBtn">拒绝</button>
+            <button class="btn btn-primary" id="approveBtn">同意授权</button>
+        </div>
+
+        <p class="hint" style="margin-top:16px;text-align:center;">
+            授权后你可以在 <a href="apps.html">我的授权</a> 中随时撤销。
+        </p>
+    </div>
+
+    <!-- 完成 -->
+    <div class="card" id="doneCard" style="display:none;">
+        <div class="empty">
+            <span class="icon" id="doneIcon">✅</span>
+            <div id="doneText" style="font-size:16px;color:var(--text-primary);">授权成功，正在返回应用…</div>
+            <p class="hint" style="margin-top:12px;">如果没有自动跳转，请 <a id="doneLink" href="#">点击这里</a>。</p>
+        </div>
+    </div>
+
+</div>
+
+<script src="js/api.js?v=1"></script>
+<script>
+(function () {
+    'use strict';
+    var U = window.NFLSHC.util;
+    var OAuth = window.NFLSHC.OAuth;
+
+    var params = new URLSearchParams(location.search);
+    var clientId = params.get('client_id') || '';
+    var redirectUri = params.get('redirect_uri') || '';
+    var scopeRaw = params.get('scope') || '';
+    var state = params.get('state') || '';
+    var info = null;
+
+    function show(id) {
+        ['loadingCard', 'errorCard', 'loginCard', 'consentCard', 'doneCard'].forEach(function (x) {
+            var el = document.getElementById(x);
+            if (el) el.style.display = (x === id) ? 'block' : 'none';
+        });
+    }
+
+    function fail(msg) {
+        document.getElementById('errorText').textContent = msg;
+        show('errorCard');
+        document.getElementById('steps').style.display = 'none';
+    }
+
+    // ============ 主题选择 ============
+    (function initTheme() {
+        var sel = document.getElementById('themeSelect');
+        var themes = ThemeManager.getThemes();
+        Object.keys(themes).forEach(function (k) {
+            var o = document.createElement('option');
+            o.value = k; o.textContent = themes[k].icon + ' ' + themes[k].name;
+            sel.appendChild(o);
+        });
+        sel.value = ThemeManager.getTheme();
+        sel.addEventListener('change', function () { ThemeManager.setTheme(sel.value); });
+    })();
+
+    function renderNavUser() {
+        var user = U.currentUser();
+        var navUser = document.getElementById('navUser');
+        var logoutBtn = document.getElementById('logoutBtn');
+        if (user && user.username) {
+            navUser.textContent = '👤 ' + user.username;
+            logoutBtn.style.display = 'inline-block';
+        } else {
+            navUser.textContent = '';
+            logoutBtn.style.display = 'none';
+        }
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', function () {
+        U.clearUser();
+        renderNavUser();
+        boot();
+    });
+
+    // ============ 启动 ============
+    async function boot() {
+        if (!clientId) { fail('请求缺少 client_id 参数，无法识别要授权的应用。'); return; }
+        show('loadingCard');
+
+        var user = await U.validateSession();
+        renderNavUser();
+
+        // 未登录：展示登录表单
+        if (!user) {
+            document.getElementById('steps').style.display = 'flex';
+            document.getElementById('stepLogin').classList.add('active');
+            document.getElementById('stepAuth').classList.remove('active');
+            document.getElementById('registerLink').href = 'register.html?next=' + encodeURIComponent(location.href);
+            show('loginCard');
+            return;
+        }
+
+        await loadConsent();
+    }
+
+    // ============ 授权信息 ============
+    async function loadConsent() {
+        try {
+            info = await OAuth.authorizeInfo(clientId, redirectUri, scopeRaw);
+        } catch (e) {
+            var code = (e.data && e.data.code) || '';
+            var map = {
+                invalid_client: '应用不存在或已被删除，请联系该应用的开发者。',
+                client_suspended: '该应用已被管理员停用，暂时无法授权。',
+                invalid_redirect_uri: '该应用的回调地址未正确登记，请联系该应用的开发者检查配置。',
+                invalid_scope: '该应用未申请任何有效权限，请联系该应用的开发者。'
+            };
+            fail(map[code] || e.message || '无法读取授权请求。');
+            return;
+        }
+
+        document.getElementById('steps').style.display = 'flex';
+        document.getElementById('stepLogin').classList.remove('active');
+        document.getElementById('stepAuth').classList.add('active');
+
+        var c = info.client;
+        document.getElementById('appName').textContent = c.name || '(未命名应用)';
+        document.getElementById('appDesc').textContent = c.description || '';
+        var metaParts = [];
+        if (c.owner) metaParts.push('开发者：' + c.owner);
+        if (c.homepage) metaParts.push('主页：' + c.homepage);
+        document.getElementById('appMeta').textContent = metaParts.join(' · ');
+
+        var logo = document.getElementById('appLogo');
+        if (c.logo) {
+            logo.textContent = '';
+            logo.style.backgroundImage = 'url("' + String(c.logo).replace(/["\\]/g, '') + '")';
+        } else {
+            logo.textContent = '🔗';
+        }
+
+        // 权限清单（可勾选）
+        var list = document.getElementById('scopeList');
+        list.innerHTML = info.scopes.map(function (s) {
+            return '<li class="scope-item' + (s.sensitive ? ' sensitive' : '') + '">' +
+                '<input type="checkbox" class="scope-cb" value="' + U.escapeHtml(s.key) + '" checked ' +
+                'style="margin-top:4px;width:17px;height:17px;accent-color:var(--accent-color);cursor:pointer;">' +
+                '<div style="flex:1;min-width:0;">' +
+                '<div class="scope-name">' + U.escapeHtml(s.name) +
+                (s.sensitive ? '<span class="badge-sensitive">敏感</span>' : '') + '</div>' +
+                '<div class="scope-desc">' + U.escapeHtml(s.desc) + '</div>' +
+                '</div></li>';
+        }).join('');
+
+        // 已授权过的提示
+        try {
+            var grants = await OAuth.grants();
+            var prev = (grants.grants || []).filter(function (g) { return g.clientId === c.clientId && !g.revoked; })[0];
+            if (prev) {
+                var el = document.getElementById('alreadyGranted');
+                el.style.display = 'block';
+                el.textContent = '你曾在 ' + new Date(prev.grantedAt).toLocaleString('zh-CN') + ' 授权过该应用，本次将更新授权范围。';
+            }
+        } catch (e) { /* 忽略 */ }
+
+        show('consentCard');
+    }
+
+    // ============ 同意 / 拒绝 ============
+    function selectedScopes() {
+        return Array.prototype.slice.call(document.querySelectorAll('.scope-cb:checked')).map(function (cb) { return cb.value; });
+    }
+
+    document.getElementById('approveBtn').addEventListener('click', async function () {
+        var scopes = selectedScopes();
+        if (scopes.length === 0) { U.toast('请至少勾选一项权限，或点击「拒绝」', 'warning'); return; }
+        var btn = this;
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            var res = await OAuth.authorize({
+                clientId: clientId, redirectUri: info.redirectUri, scopes: scopes, state: state, approve: true
+            });
+            finish(true, res.redirect);
+        } catch (e) {
+            U.toast(e.message || '授权失败', 'error');
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    });
+
+    document.getElementById('denyBtn').addEventListener('click', async function () {
+        var btn = this;
+        btn.disabled = true;
+        try {
+            var res = await OAuth.authorize({
+                clientId: clientId, redirectUri: info ? info.redirectUri : redirectUri, scopes: [], state: state, approve: false
+            });
+            finish(false, res.redirect);
+        } catch (e) {
+            U.toast(e.message || '操作失败', 'error');
+            btn.disabled = false;
+        }
+    });
+
+    function finish(approved, redirect) {
+        document.getElementById('steps').style.display = 'none';
+        document.getElementById('doneIcon').textContent = approved ? '✅' : '🚫';
+        document.getElementById('doneText').textContent = approved ? '授权成功，正在返回应用…' : '已拒绝授权，正在返回应用…';
+        show('doneCard');
+        if (redirect) {
+            document.getElementById('doneLink').href = redirect;
+            setTimeout(function () { location.href = redirect; }, 900);
+        } else {
+            document.getElementById('doneLink').href = 'apps.html';
+            document.getElementById('doneText').textContent = '操作已完成（该应用未提供有效回调地址）。';
+        }
+    }
+
+    // ============ 登录 ============
+    async function doLogin() {
+        var username = document.getElementById('username').value.trim();
+        var password = document.getElementById('password').value;
+        var errBox = document.getElementById('loginError');
+        var btn = document.getElementById('loginBtn');
+        errBox.style.display = 'none';
+        if (!username || !password) {
+            errBox.textContent = '请填写用户名和密码';
+            errBox.style.display = 'block';
+            return;
+        }
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            var hash = await U.hashPassword(password);
+            var data = await window.NFLSHC.Account.login(username, hash);
+            if (!data.token) throw new Error(data.error || '登录失败');
+            window.AuthToken.set(data.token);
+            U.saveUser({ username: data.username || username, isAdmin: !!data.isAdmin });
+            renderNavUser();
+            await loadConsent();
+        } catch (e) {
+            errBox.innerHTML = U.escapeHtml(e.message || '登录失败');
+            if (/冻结|封禁|banned|frozen|申诉/i.test(e.message || '')) {
+                errBox.innerHTML += ' <a href="index.html?appeal=1&username=' + encodeURIComponent(username) + '">前往申诉</a>';
+            }
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', doLogin);
+    document.getElementById('password').addEventListener('keypress', function (e) { if (e.key === 'Enter') doLogin(); });
+    document.getElementById('username').addEventListener('keypress', function (e) { if (e.key === 'Enter') document.getElementById('password').focus(); });
+
+    window.togglePw = function (inputId, btn) {
+        var input = document.getElementById(inputId);
+        if (!input) return;
+        var isPw = input.type === 'password';
+        input.type = isPw ? 'text' : 'password';
+        btn.textContent = isPw ? '🙈' : '👁️';
+    };
+
+    boot();
+})();
+</script>
+</body>
+</html>
