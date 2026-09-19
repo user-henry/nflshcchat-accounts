@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>发现应用 · NFLSHC 账号授权中心</title>
+    <meta name="theme-color" content="#ffd700">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/app.css">
+    <style>
+        /* 应用目录卡片 */
+        .dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+        .dir-card {
+            display: flex; flex-direction: column; gap: 12px;
+            background: var(--bg-secondary); border: 1px solid var(--border-color);
+            border-radius: 16px; padding: 18px;
+            transition: transform .18s, border-color .18s, box-shadow .18s;
+        }
+        .dir-card:hover { transform: translateY(-3px); border-color: var(--accent-color); box-shadow: 0 14px 32px rgba(0,0,0,.32); }
+        .dir-head { display: flex; gap: 12px; align-items: flex-start; }
+        .dir-logo {
+            width: 48px; height: 48px; border-radius: 13px; flex-shrink: 0;
+            background: var(--bg-tertiary) center/cover no-repeat;
+            border: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: center; font-size: 22px;
+        }
+        .dir-name { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .dir-desc {
+            font-size: 13px; color: var(--text-secondary); line-height: 1.65; flex: 1;
+            display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .dir-meta { font-size: 12px; color: var(--text-muted); }
+        .dir-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
+        .tag {
+            font-size: 11px; padding: 2px 9px; border-radius: 20px;
+            background: var(--accent-color-alpha); color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+        }
+        .tag.bot { background: rgba(52,152,219,.14); color: #6cb6ef; border-color: rgba(52,152,219,.5); }
+        .search-row { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+
+<nav class="nav">
+    <div class="nav-brand">
+        <span class="dot"></span>
+        <span>NFLSHC 账号授权中心</span>
+    </div>
+    <div class="nav-links">
+        <a href="discover.html">发现应用</a>
+        <a href="apps.html">我的授权</a>
+        <a href="https://platform.nflshcchat.cc.cd" target="_blank" rel="noopener">开发者平台</a>
+        <select id="themeSelect" class="input" style="width:auto;padding:7px 10px;font-size:13px;"></select>
+        <span class="nav-user" id="navUser"></span>
+        <button id="logoutBtn" style="display:none;">退出登录</button>
+    </div>
+</nav>
+
+<div class="wrap">
+    <h1 class="page-title">发现应用</h1>
+    <p class="page-sub">
+        以下应用由开发者基于 <a href="https://platform.nflshcchat.cc.cd" target="_blank" rel="noopener">NFLSHC 开放平台</a> 构建。
+        使用你的账号前，它们会先把你引导到本授权中心，由你确认授予哪些信息。
+    </p>
+
+    <div class="search-row">
+        <input class="input" id="searchBox" placeholder="🔍 搜索应用名称、简介或开发者…" style="flex:1;min-width:220px;">
+        <button class="btn btn-ghost" id="refreshBtn">刷新</button>
+    </div>
+
+    <div id="appList" class="dir-grid">
+        <div class="card" style="grid-column:1/-1;">
+            <div class="skeleton" style="width:45%;height:18px;margin-bottom:14px;"></div>
+            <div class="skeleton" style="width:80%;margin-bottom:10px;"></div>
+            <div class="skeleton" style="width:65%;"></div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:24px;">
+        <h3 style="font-size:16px;margin-bottom:8px;">🛡️ 授权说明</h3>
+        <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.85;">
+            · 应用只能读取你在授权页勾选的信息，<strong>永远无法获取你的密码</strong>。<br>
+            · 授权后你可以在 <a href="apps.html">我的授权</a> 中随时撤销，撤销后应用的令牌立即失效。<br>
+            · 如果发现应用存在异常行为，可在 <a href="https://nflshcchat.cc.cd" target="_blank" rel="noopener">主站</a> 向管理员反馈。
+        </p>
+    </div>
+</div>
+
+<script src="js/api.js?v=1"></script>
+<script>
+(function () {
+    'use strict';
+    var U = window.NFLSHC.util;
+    var appList = document.getElementById('appList');
+    var searchBox = document.getElementById('searchBox');
+    var allApps = [];
+
+    (function () {
+        var sel = document.getElementById('themeSelect');
+        var themes = ThemeManager.getThemes();
+        Object.keys(themes).forEach(function (k) {
+            var o = document.createElement('option');
+            o.value = k; o.textContent = themes[k].icon + ' ' + themes[k].name;
+            sel.appendChild(o);
+        });
+        sel.value = ThemeManager.getTheme();
+        sel.addEventListener('change', function () { ThemeManager.setTheme(sel.value); });
+    })();
+
+    document.getElementById('logoutBtn').addEventListener('click', async function () {
+        try { await window.NFLSHC.request('/api/auth/logout', { method: 'POST' }); } catch (e) { /* 忽略 */ }
+        U.clearUser();
+        location.href = 'index.html';
+    });
+
+    var SCOPE_SHORT = {
+        profile: '基本资料', email: '邮箱', rooms: '群聊列表',
+        friends: '好友列表', messages: '消息内容', stats: '统计信息'
+    };
+
+    function render(apps) {
+        if (apps.length === 0) {
+            appList.innerHTML = '<div class="card" style="grid-column:1/-1;"><div class="empty">' +
+                '<span class="icon">🔍</span>没有找到匹配的应用<br>' +
+                '<span class="hint">换个关键词试试，或清空搜索框查看全部应用。</span></div></div>';
+            return;
+        }
+        appList.innerHTML = apps.map(function (a) {
+            var scopes = (a.scopes || []).slice(0, 4).map(function (s) {
+                return '<span class="chip">' + U.escapeHtml(SCOPE_SHORT[s] || s) + '</span>';
+            }).join('');
+            var more = (a.scopes || []).length > 4 ? '<span class="chip muted">+' + ((a.scopes || []).length - 4) + '</span>' : '';
+            return '<div class="dir-card">' +
+                '<div class="dir-head">' +
+                '<div class="dir-logo"' + (a.logo ? ' style="background-image:url(\'' + String(a.logo).replace(/["'\\]/g, '') + '\')"' : '') + '>' +
+                (a.logo ? '' : '🔗') + '</div>' +
+                '<div style="min-width:0;flex:1;">' +
+                '<div class="dir-name">' + U.escapeHtml(a.name) +
+                (a.isBot ? '<span class="tag bot">机器人</span>' : '') + '</div>' +
+                '<div class="dir-meta">' + U.escapeHtml(a.owner || '未知开发者') + ' · ' +
+                (a.authorizedUsers || 0) + ' 人已授权</div>' +
+                '</div></div>' +
+                '<div class="dir-desc">' + U.escapeHtml(a.description || '该应用未填写简介') + '</div>' +
+                '<div class="grant-scopes">' + scopes + more + '</div>' +
+                '<div class="dir-foot">' +
+                (a.homepage ? '<a class="btn btn-ghost btn-sm" href="' + U.escapeHtml(a.homepage) + '" target="_blank" rel="noopener">访问官网</a>' : '<span></span>') +
+                '<a class="btn btn-primary btn-sm" href="authorize.html?client_id=' + encodeURIComponent(a.clientId) + '">使用此应用</a>' +
+                '</div></div>';
+        }).join('');
+    }
+
+    function filter() {
+        var q = searchBox.value.trim().toLowerCase();
+        if (!q) { render(allApps); return; }
+        render(allApps.filter(function (a) {
+            return (a.name + ' ' + a.description + ' ' + a.owner).toLowerCase().indexOf(q) !== -1;
+        }));
+    }
+
+    async function load() {
+        appList.innerHTML = '<div class="card" style="grid-column:1/-1;"><div class="skeleton" style="width:40%;height:18px;margin-bottom:12px;"></div><div class="skeleton" style="width:75%;"></div></div>';
+        try {
+            var data = await window.NFLSHC.request('/api/oauth/apps/directory');
+            allApps = data.apps || [];
+            if (allApps.length === 0) {
+                appList.innerHTML = '<div class="card" style="grid-column:1/-1;"><div class="empty">' +
+                    '<span class="icon">🚀</span>还没有应用上架<br>' +
+                    '<span class="hint">成为第一个开发者：前往 <a href="https://platform.nflshcchat.cc.cd" target="_blank" rel="noopener">开发者平台</a> 创建应用。</span></div></div>';
+                return;
+            }
+            filter();
+        } catch (e) {
+            appList.innerHTML = '<div class="card" style="grid-column:1/-1;"><div class="alert alert-error">加载失败：' + U.escapeHtml(e.message) + '</div></div>';
+        }
+    }
+
+    searchBox.addEventListener('input', filter);
+    document.getElementById('refreshBtn').addEventListener('click', load);
+
+    (async function boot() {
+        // 应用目录是公开接口，未登录也能浏览
+        var user = U.currentUser();
+        if (user && user.username) {
+            document.getElementById('navUser').textContent = '👤 ' + user.username;
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+        } else {
+            document.getElementById('logoutBtn').style.display = 'none';
+            var nav = document.querySelector('.nav-links');
+            var loginLink = document.createElement('a');
+            loginLink.href = 'index.html?next=' + encodeURIComponent('discover.html');
+            loginLink.textContent = '登录';
+            nav.insertBefore(loginLink, document.getElementById('themeSelect'));
+        }
+        await load();
+    })();
+})();
+</script>
+</body>
+</html>
