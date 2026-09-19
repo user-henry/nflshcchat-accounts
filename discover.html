@@ -7,6 +7,8 @@
     <meta name="theme-color" content="#ffd700">
     <link rel="stylesheet" href="css/themes.css">
     <link rel="stylesheet" href="css/app.css">
+    <!-- theme.js 必须最先加载：提供 ThemeManager（主题）与 AuthToken（鉴权令牌） -->
+    <script src="js/theme.js?v=2"></script>
     <style>
         /* 应用目录卡片 */
         .dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
@@ -87,10 +89,39 @@
     </div>
 </div>
 
-<script src="js/api.js?v=1"></script>
+<script src="js/api.js?v=2"></script>
 <script>
 (function () {
     'use strict';
+
+    var API_URL = 'https://worker.nflshcchat.cc.cd/api/oauth/apps/directory';
+
+    function showFatal(title, detail) {
+        var el = document.getElementById('appList');
+        if (!el) { alert(title + '\n' + (detail || '')); return; }
+        el.innerHTML = '<div class="card" style="grid-column:1/-1;">' +
+            '<div class="alert alert-error"><b>' + String(title).replace(/[<>&]/g, '') + '</b>' +
+            (detail ? '<br><span style="font-size:12.5px;opacity:.9;word-break:break-all;">' + String(detail).replace(/[<>&]/g, '') + '</span>' : '') +
+            '</div>' +
+            '<p class="hint" style="margin-top:10px;">排查建议：① 强制刷新（Ctrl+F5）；② 确认能打开 <a href="https://worker.nflshcchat.cc.cd/api/oauth/scopes" target="_blank" rel="noopener">API 探针</a>；③ 检查浏览器插件是否拦截了请求。</p>' +
+            '</div>';
+    }
+
+    // 全局兜底：脚本错误/未捕获的 Promise 拒绝也显示出来，避免只剩骨架屏
+    window.addEventListener('error', function (e) {
+        showFatal('页面脚本出错', (e && e.message) || '未知错误');
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+        var r = e && e.reason;
+        showFatal('请求未完成', (r && (r.message || r)) || '未知原因');
+    });
+
+    // 依赖检查：api.js / theme.js 没加载成功时给出明确提示
+    if (!window.NFLSHC || !window.NFLSHC.util || !window.NFLSHC.request) {
+        showFatal('公共脚本未加载', 'js/api.js 或 js/theme.js 加载失败，请强制刷新（Ctrl+F5）重试。');
+        return;
+    }
+
     var U = window.NFLSHC.util;
     var appList = document.getElementById('appList');
     var searchBox = document.getElementById('searchBox');
@@ -161,7 +192,22 @@
     async function load() {
         appList.innerHTML = '<div class="card" style="grid-column:1/-1;"><div class="skeleton" style="width:40%;height:18px;margin-bottom:12px;"></div><div class="skeleton" style="width:75%;"></div></div>';
         try {
-            var data = await window.NFLSHC.request('/api/oauth/apps/directory');
+            // 直接调用公开接口（不经封装），便于把真实 HTTP 状态暴露到界面上
+            var ctrl = new AbortController();
+            var timer = setTimeout(function () { ctrl.abort(); }, 12000);
+            var res;
+            try {
+                res = await fetch(API_URL, { signal: ctrl.signal, headers: { 'Accept': 'application/json' } });
+            } finally { clearTimeout(timer); }
+
+            if (!res.ok) {
+                var body = '';
+                try { body = (await res.text()).slice(0, 200); } catch (e) { /* 忽略 */ }
+                showFatal('接口返回 HTTP ' + res.status, body || res.statusText || '');
+                return;
+            }
+            var data = await res.json().catch(function () { return null; });
+            if (!data) { showFatal('接口返回的不是合法 JSON', '请稍后重试'); return; }
             allApps = data.apps || [];
             if (allApps.length === 0) {
                 appList.innerHTML = '<div class="card" style="grid-column:1/-1;"><div class="empty">' +
@@ -171,7 +217,8 @@
             }
             filter();
         } catch (e) {
-            appList.innerHTML = '<div class="card" style="grid-column:1/-1;"><div class="alert alert-error">加载失败：' + U.escapeHtml(e.message) + '</div></div>';
+            var msg = (e && e.name === 'AbortError') ? '请求超时（12 秒无响应）' : ((e && e.message) || String(e));
+            showFatal('加载应用失败', msg + ' — 目标地址：' + API_URL);
         }
     }
 
