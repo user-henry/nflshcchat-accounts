@@ -1,3 +1,5 @@
+**简体中文** | [English](README.en.md)
+
 # NFLSHC 账号授权中心（accounts.nflshcchat.cc.cd）
 
 NFLSHC 统一账号授权中心：用户在此登录 / 注册 NFLSHC 账号，并授权第三方应用访问自己的账号信息（类似 OAuth 的授权页）。
